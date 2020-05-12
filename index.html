@@ -1,0 +1,398 @@
+<head>
+    <style>
+        .border-all{
+            border: 2px solid black;
+        }
+        .video-size{
+            height: 40vh;
+            max-width: 100%;
+        }
+        .font-style{
+            font-weight: bold;
+            font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+            letter-spacing: 0px;
+            font-size: 20px;
+            text-transform: uppercase;
+            padding-top: 1px;
+            opacity: 0.5;
+        }
+    </style>
+        <script src="/socket.io/socket.io.js"></script>
+        
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css">
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"></script>
+    </head>
+    <title>Video Chat</title>
+    <body style="background-position:center;background-image: url(https://homey-revolutions.000webhostapp.com/bg.jpg);">
+        <div class="container">
+            <div class="row">
+                <div class="col-12 text-center text-danger font-style">
+                    Random video Chat
+                </div>
+                <div id="online" class="col-12 text-center text-danger font-style">
+                    
+                </div>
+            </div>
+        </div>
+        <br>
+
+<div class="container">
+  <div class="row">
+    <div class="col-xs-12 col-sm-12 col-md-8 col-lg-8 border-all">
+      <div>
+        <video id="remotevideo" autoplay class="border-all video-size"></video> 
+        <audio id="remoteaudio" autoplay></audio>  
+        <video id="localvideo" autoplay class="border-all video-size"></video>  
+        <audio id="localaudio" autoplay></audio> 
+      </div>
+          </div>
+    
+    <div class="col-xs-12 col-sm-12 col-md-4 col-lg-4 border-all">
+      <hr>
+      <div id="messagebox"   style="color:white;font-weight: bold;max-height: 30vh;overflow: auto;"></div>
+      
+          <input type="text" class="form-control" id="message">
+          <br>
+          <button class="btn btn-danger btn-lg col-12"  onclick="onsend()">SEND</button>
+      
+      <hr>
+    </div>
+  </div>
+  <hr>
+  <div class="row">
+    <button id="nextbtn" onclick="onNext()" 
+      class="  btn btn-danger btn-lg col-5" 
+      disabled>Hang Up</button>
+        <div class="col-2"></div>  
+      <button id="startbtn" onclick="startconn2()" 
+      class="  btn btn-danger btn-lg col-5">START</button>
+  </div>
+</div>
+        
+        
+    
+                   
+                    
+        
+                
+        
+</body>
+        
+        
+        
+        <script>
+            
+            var socket =  io();
+           
+            var caller = false;
+            var connection = null;
+            var icegone = false;
+            
+            let localstreamholder= null;
+            var conf = {
+                'iceServers' : [
+                    {'url' : 'stun:stun.l.google.com:19302'},
+                    {
+                  url: 'turn:numb.viagenie.ca',
+                  credential: 'muazkh',
+                  username: 'webrtc@live.com'
+              }
+                ]
+            }
+
+            socket.emit("online",JSON.stringify({'name':'online'}));
+
+            socket.on("online1",(data)=>{
+                let tempdata = JSON.parse(data);
+                document.getElementById("online").innerHTML = 'users online: '+ tempdata.online;
+            })
+            
+            
+
+            function onsend(){
+                let tempmsg = document.getElementById("message").value;
+                
+
+                if(tempmsg!=''){
+                    tempmsg=tempmsg.replace('<','');
+                    tempmsg=tempmsg.replace('>','');
+                    tempmsg=tempmsg.replace('`','');
+                    socket.emit("message",JSON.stringify({'message':tempmsg}));
+                }else{
+                    alert("Please write something!");
+                }
+                document.getElementById("message").value="";
+                
+            }
+           
+            function onNext(){
+               
+                socket.emit("disconnecting",JSON.stringify({"disconnect":true}));
+                
+                 connection.close();
+                 caller = false;
+                 connection = null;
+                 icegone = false;
+                 document.getElementById("remotevideo").srcObject=null;
+                 localstreamholder= null;
+
+                 //startconn2();
+                 //document.getElementById("messagebox").innerHTML="";
+                 location.reload();
+        
+            }
+
+            socket.on("getmessage",(msg) => {
+                let chatbox = document.getElementById("messagebox");
+                let tempgetmsg = JSON.parse(msg).message;
+                chatbox.innerHTML += `<pre style="color:white;font-weight: bold;">`+"UNKNOWN: "+tempgetmsg+`<br>`+`</pre>`;
+                document.getElementById("messagebox").scrollTop = document.getElementById("messagebox").scrollHeight;
+
+
+            })
+        
+            socket.on("otherdisconnect",(data)=>{
+                connection.close();
+                 caller = false;
+                 connection = null;
+                 icegone = false;
+                 document.getElementById("remotevideo").srcObject=null;
+                 localstreamholder= null;
+                 location.reload()
+            })
+        
+            
+            socket.on("signal1",function(data){
+                if(connection==null){startsig();}
+                
+                var localdata = JSON.parse(data);
+        
+                if(localdata.answer && caller == true){
+                    connection.setRemoteDescription(new RTCSessionDescription(localdata.answer)).
+                    then(
+                        ()=>
+                        {
+                            //console.log("saved the answer from peer")
+                            
+                        }
+                    )
+                }
+                
+                
+                if(localdata.offer && caller == false){
+                    
+                    connection.setRemoteDescription(new RTCSessionDescription(localdata.offer)).
+                    then(function(){
+                        
+                            connection.createAnswer().then(
+                                function(desc){
+                                    connection.setLocalDescription(desc);
+                                    socket.emit("signal",JSON.stringify({'answer' : desc}))
+                                   // console.log("saved the offer ans sending the answer")
+                                   
+                                }
+                                
+                            )
+                    })
+                }
+        
+                if(localdata.candidate && localdata.caller==true){
+                    
+                    if(caller==false){
+                        
+                        connection.addIceCandidate(localdata.candidate).
+                    then(
+                        ()=>{
+                            
+                            
+                            //console.log("saved the ice candidate",localdata.candidate);
+                        }
+                    )
+                    }
+                    
+                }
+                if(localdata.candidate && localdata.caller==false){
+                    if(caller==true){
+                        
+                        connection.addIceCandidate(localdata.candidate).
+                    then(
+                        ()=>{
+                            
+                            init();
+                            //console.log("saved the ice candidate",localdata.candidate);
+                        }
+                    )
+                    }
+                    
+                }
+            });
+        
+            
+        
+           async function startsig() {
+                //connection = new webkitRTCPeerConnection(conf);
+                connection = new RTCPeerConnection(conf);
+                document.getElementById("nextbtn").disabled=false;
+                document.getElementById("startbtn").disabled=true;
+                //await init();
+                navigator.mediaDevices.getUserMedia({'video' : true,'audio' : true}).
+                then( (stream) => {
+                     document.getElementById("localvideo").srcObject = stream;
+                     localstreamholder= stream;
+                    //connection.addStream(stream);
+                     for(const track of stream.getTracks()) {
+                          connection.addTrack(track);
+                          
+                          //console.log("adding track in connection",track);
+                      }
+                      
+                      
+                    
+                })
+                    //console.log("then works")
+
+                let inboundStream = null;
+                let inaudiostream = null;
+                connection.onnegotiationneeded = function(){
+                   if(caller==true){ 
+                    connection.createOffer().
+                    then(
+                        function(desc){
+                            //console.log(1)
+                            connection.setLocalDescription(desc);
+                            socket.emit("signal",JSON.stringify({'offer' : desc}));
+                            //console.log("offer emitted");
+                            
+                        }
+                    )
+                   }
+                }
+                connection.ontrack = ev => {
+                    
+                    if (ev.streams && ev.streams[0]) {
+                        document.getElementById("remotevideo").srcObject = ev.streams[0];
+                        
+                        if(ev.streams[1]){
+                            
+                            document.getElementById("remoteaudio").srcObject = ev.streams[1];
+                        }
+                        
+                    } else {
+                        if (!inboundStream) {
+                                inboundStream = new MediaStream();
+                                 document.getElementById("remotevideo").srcObject = inboundStream;
+                            }
+                            if(ev.track.kind=='video'){
+                                inboundStream.addTrack(ev.track);
+                            }
+                        
+
+                        if(!inaudiostream){
+                            inaudiostream = new MediaStream();
+                            document.getElementById("remoteaudio").srcObject=inaudiostream;
+                        }
+                        if(ev.track.kind=='audio'){
+                            inaudiostream.addTrack(ev.track);
+                        }
+                        //console.log(ev.track.kind)
+
+                        }
+                       // console.log("ontrack has been fired and saved tracks",ev.streams)
+        }
+        
+        
+                connection.onicecandidate = function(event){
+                    
+                   if(icegone==false){
+                    
+                    if(event.candidate){
+                        
+                        socket.emit("signal",JSON.stringify({'candidate' : event.candidate,'caller' : caller}));
+                       // console.log("ice candidate emitted -> done",event.candidate);
+                        
+                        
+                    }
+                    
+                    icegone=true;
+                    
+                   } 
+                    
+                }
+        
+                
+            
+                /*connection.onaddstream = function(event){
+                    document.getElementById("remotevideo").srcObject = event.stream;
+                    console.log("adding remote tream");
+                }*/
+                
+                connection.oniceconnectionstatechange = function(event){}
+                connection.onicegatheringstatechange = function(event){}
+                connection.onsignalingstatechange= function(event){};
+                
+            
+                //console.log("get access to media devices")
+            }
+            function helper(){
+                
+                
+                    
+                    
+
+                
+            }
+        
+            function startconn2(){
+                caller = true;
+                if(!connection){
+                    
+                   startsig();
+                   
+                }
+                
+                
+            
+            }
+        
+            async function init(){
+                
+
+
+                navigator.mediaDevices.getUserMedia({'video' : true,'audio' : true}).
+                then( (stream) => {
+                     document.getElementById("localvideo").srcObject = stream;
+                     localstreamholder= stream;
+                    //connection.addStream(stream);
+                     for(const track of stream.getTracks()) {
+                          connection.addTrack(track);
+                          
+                          //console.log("adding track in connection",track);
+                      }
+                      
+                     
+                    
+                }
+                    
+                    )
+            }
+        
+             function sendlocaldesc(desc){
+                    connection.setLocalDescription(desc,function () {
+                            //console.log("sending local desc");
+                             socket.emit("signal",JSON.stringify({'sdp' : desc}));
+                            //console.log("done")
+                           
+                    })
+                }
+                
+                
+        </script>
+    
+    
+        
+
+                
